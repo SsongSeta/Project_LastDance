@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import os
 
 # ==========================================
 # 0. 페이지 기본 설정
@@ -8,27 +9,30 @@ import plotly.express as px
 st.set_page_config(page_title="LoL 오토필 생존 가이드", page_icon="🎮", layout="wide")
 
 # ==========================================
-# 1. 데이터 로드 및 캐싱 (가장 중요)
+# 1. 데이터 로드 및 캐싱
 # ==========================================
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
 @st.cache_data
 def load_data():
-    # 실제로는 사전에 저장해둔 parquet 파일 경로를 입력하세요.
-    # 예: df_match = pd.read_parquet('df_match.parquet')
+    # 현재 폴더 경로와 파일명
+    match_path = os.path.join(current_dir, 'match_data_light.parquet')
+    champ_path = os.path.join(current_dir, 'champ_data.parquet')
+    user_path = os.path.join(current_dir, 'user_profile_light.parquet')
     
-    # [주의] 이 코드가 실행되기 전, 주피터에서 작업하신 최종 df, df_champ, user_profile_df를 
-    # 반드시 파일(csv 또는 parquet)로 저장해서 app.py와 같은 폴더에 두셔야 합니다!
-    df_match = pd.read_parquet('match_data_light.parquet') 
-    df_champ = pd.read_parquet('champ_data.parquet')
-    user_profile_df = pd.read_parquet('user_profile_light.parquet')
+    df_match = pd.read_parquet(match_path) 
+    df_champ = pd.read_parquet(champ_path)
+    user_profile_df = pd.read_parquet(user_path)
+    
     return df_match, df_champ, user_profile_df
 
 try:
     df_match, df_champ, user_profile_df = load_data()
-except FileNotFoundError:
-    st.error("데이터 파일을 찾을 수 없습니다. 주피터 노트북에서 먼저 데이터를 추출(parquet 저장)해 주세요!")
+except FileNotFoundError as e:
+    st.error(f"데이터 파일을 찾을 수 없습니다. 경로를 확인해주세요: {e}")
     st.stop()
 
-# 추천 시스템 V2 함수 (이전 단계에서 작성한 코드 그대로 사용)
+# 추천 시스템 V2 함수
 def recommend_autofill_v2(target_puuid, target_position, df_match, df_champ, user_profile_df, 
                           banned_champs, team_needs, is_ranked, top_n=5):
    
@@ -58,7 +62,7 @@ def recommend_autofill_v2(target_puuid, target_position, df_match, df_champ, use
     candidates_df = df_champ[df_champ['champion_name'].isin(valid_candidates)].copy()
     
     # ---------------------------------------------------------
-    # 3. 고도화된 스코어링 엔진 (Scoring)
+    # 3. 스코어링 엔진 (Scoring)
     # ---------------------------------------------------------
     candidates_df['total_score'] = 0.0
     candidates_df['recommend_reason'] = ""
@@ -68,7 +72,7 @@ def recommend_autofill_v2(target_puuid, target_position, df_match, df_champ, use
         score = 0
         reason = []
         
-        # A. 숙련도(Proficiency) 보정 [핵심 보완점]
+        # A. 숙련도(Proficiency) 보정
         if row['is_played']:
             score += 40
             reason.append("⭐ 숙련도 있음")
@@ -77,7 +81,7 @@ def recommend_autofill_v2(target_puuid, target_position, df_match, df_champ, use
                 score -= 30 # 랭크게임인데 안 해본 챔피언이면 강력한 페널티
                 reason.append("⚠️ 연습 필요")
                 
-        # B. 팀 조합(Team Needs) 보정 [핵심 보완점]
+        # B. 팀 조합(Team Needs) 보정
         if team_needs == 'AP_needed' and row['info_magic'] >= 6:
             score += 25
             reason.append("아군 AP 보완")
