@@ -17,9 +17,9 @@ def load_data():
     
     # [주의] 이 코드가 실행되기 전, 주피터에서 작업하신 최종 df, df_champ, user_profile_df를 
     # 반드시 파일(csv 또는 parquet)로 저장해서 app.py와 같은 폴더에 두셔야 합니다!
-    df_match = pd.read_parquet('match_data.parquet') 
+    df_match = pd.read_parquet('match_data_light.parquet') 
     df_champ = pd.read_parquet('champ_data.parquet')
-    user_profile_df = pd.read_parquet('user_profile.parquet')
+    user_profile_df = pd.read_parquet('user_profile_light.parquet')
     return df_match, df_champ, user_profile_df
 
 try:
@@ -170,7 +170,7 @@ if st.sidebar.button("추천 챔피언 분석하기"):
 st.title("오토필 챔피언 추천 시스템")
 st.markdown("챔피언 성향 분석과 유저의 과거 전적을 결합하여 최적의 픽을 제안합니다.")
 
-st.subheader("1단계: 챔피언 성향 클러스터링 매핑 (PCA)")
+st.subheader("챔피언 성향 클러스터링 매핑 (PCA)")
 
 # Plotly를 활용한 반응형 스캐터 플롯 생성
 df_champ['cluster_id'] = df_champ['cluster_id'].astype(str) # 색상을 카테고리별로 나누기 위해 문자형 변환
@@ -193,7 +193,7 @@ st.plotly_chart(fig, use_container_width=True)
 # ==========================================
 if st.session_state.get('run'):
     st.markdown("---")
-    st.subheader(f"2단계: '{selected_pos}' 포지션 맞춤 추천 챔피언 Top 5")
+    st.subheader(f"'{selected_pos}' 포지션 맞춤 추천 챔피언 Top 5")
     
     with st.spinner('유저 성향과 메타 분석중'):
         # 추천 로직 실행 (실제로는 위에서 복사한 함수를 호출합니다)
