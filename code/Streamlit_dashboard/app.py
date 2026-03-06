@@ -33,12 +33,12 @@ except FileNotFoundError as e:
     st.stop()
 
 # =============================
-# 0306 수정 함수
+# 0306 수정 함수 (일반/랭크 가중치 분리 반영)
 # =============================
 def recommend_autofill_v3(target_puuid, target_position, df_match, df_champ, user_profile_df, 
                           banned_champs=[], team_needs='balanced', is_ranked=True, top_n=5):
     """
-    고도화된 데이터(champ_match_key, 사거리 성향 등)가 반영된 최종 추천 시스템
+    일반/랭크 게임에 따라 스코어링 가중치(숙련도 vs 난이도/스타일)가 동적으로 변하는 추천 시스템
     """
     
     # ---------------------------------------------------------
@@ -53,103 +53,128 @@ def recommend_autofill_v3(target_puuid, target_position, df_match, df_champ, use
     secondary_cluster = user_data['secondary_cluster_id']
     user_ad_pref = user_data['avg_preferred_attack']
     user_ap_pref = user_data['avg_preferred_magic']
-    user_range_pref = user_data['avg_preferred_range'] # [추가됨] 사거리 선호도
+    user_range_pref = user_data['avg_preferred_range']
     
-    # [수정됨] 이름 불일치 방지를 위해 무조건 champ_match_key 기준으로 숙련도 목록 추출
     played_champs_keys = df_match[df_match['puuid'] == target_puuid]['champ_match_key'].unique().tolist()
     
     # ---------------------------------------------------------
     # 2. 메타 풀(Meta Pool) & 밴(Ban) 필터링
     # ---------------------------------------------------------
-    # [수정됨] 포지션 픽률도 champ_match_key 기준으로 집계
     position_meta = df_match[df_match['team_position'] == target_position]['champ_match_key'].value_counts()
-    
-    # UI에서 넘어온 밴 챔피언 이름(예: Wukong)을 데이터용 Key(예: monkeyking)로 변환
     banned_keys = df_champ[df_champ['champion_name'].isin(banned_champs)]['champ_match_key'].tolist()
     
-    # 유효 후보군 추출
     valid_candidate_keys = [c for c in position_meta.head(30).index if c not in banned_keys]
     candidates_df = df_champ[df_champ['champ_match_key'].isin(valid_candidate_keys)].copy()
     
     # ---------------------------------------------------------
-    # 3. 고도화된 스코어링 엔진 (Scoring)
+    # 3. 스코어링 엔진 (동적 가중치 적용)
     # ---------------------------------------------------------
+    candidates_df['score_prof'] = 0.0
+    candidates_df['score_team'] = 0.0
+    candidates_df['score_style'] = 0.0
+    candidates_df['score_diff'] = 0.0
     candidates_df['total_score'] = 0.0
     candidates_df['recommend_reason'] = ""
     candidates_df['is_played'] = candidates_df['champ_match_key'].isin(played_champs_keys)
     
-    # 보통 사거리 300 이하를 근거리(Melee), 초과를 원거리(Ranged)로 판별
     is_user_ranged_pref = user_range_pref > 300 
     
     for idx, row in candidates_df.iterrows():
-        score = 0
+        s_prof, s_team, s_style, s_diff, s_stat = 0, 0, 0, 0, 0
         reason = []
         
         # A. 숙련도(Proficiency) 보정
         if row['is_played']:
-            score += 30
+            # [수정] 랭크면 30점, 일반게임이면 10점으로 축소
+            s_prof += 30 if is_ranked else 10
             reason.append("⭐ 숙련도 있음")
         else:
             if is_ranked:
-                score -= 20
+                s_prof -= 20
                 reason.append("⚠️ 연습 필요")
                 
         # B. 팀 조합(Team Needs) 보정
         if team_needs == 'AP_needed' and row['info_magic'] >= 6:
-            score += 20
+            s_team += 20
             reason.append("아군 AP 보완")
         elif team_needs == 'AD_needed' and row['info_attack'] >= 6:
-            score += 20
+            s_team += 20
             reason.append("아군 AD 보완")
         else:
             ad_diff = abs(row['info_attack'] - user_ad_pref)
             ap_diff = abs(row['info_magic'] - user_ap_pref)
-            score += max(0, 10 - (ad_diff + ap_diff))
+            s_stat += max(0, 10 - (ad_diff + ap_diff))
             
-        # C. [추가됨] 전투 사거리 성향 보정 (근거리/원거리 일치 여부)
+        # C. 전투 사거리 성향 보정
         is_champ_ranged = row['attackrange'] > 300
         if is_user_ranged_pref == is_champ_ranged:
-            score += 10
+            s_stat += 10
             range_type = "원거리" if is_champ_ranged else "근접 전투"
             reason.append(f"선호하는 {range_type} 포지션")
             
         # D. 클러스터(스타일) 보정
         if row['cluster_id'] == primary_cluster:
-            score += 20
+            # [수정] 랭크면 20점, 일반게임이면 40점으로 대폭 상향
+            s_style += 20 if is_ranked else 40
             reason.append("1순위 플레이 스타일 일치")
         elif row['cluster_id'] == secondary_cluster:
-            score += 15
+            # [수정] 랭크면 15점, 일반게임이면 30점으로 대폭 상향
+            s_style += 15 if is_ranked else 30
             reason.append("2순위 플레이 스타일 일치")
             
         # E. 난이도 보정 (국밥 필터)
         if row['info_difficulty'] <= 4:
-            score += 20
+            # [수정] 랭크면 20점, 일반게임이면 40점으로 대폭 상향
+            s_diff += 20 if is_ranked else 40
             reason.append("쉬운 난이도")
             
-        candidates_df.at[idx, 'total_score'] = score
+        total = s_prof + s_team + s_style + s_diff + s_stat
+        
+        candidates_df.at[idx, 'score_prof'] = s_prof
+        candidates_df.at[idx, 'score_team'] = s_team
+        candidates_df.at[idx, 'score_style'] = s_style
+        candidates_df.at[idx, 'score_diff'] = s_diff
+        candidates_df.at[idx, 'total_score'] = total
         candidates_df.at[idx, 'recommend_reason'] = " / ".join(reason) if reason else "무난한 픽"
         
     # ---------------------------------------------------------
-    # 4. 탐험(Exploration) 로직 및 최종 도출
+    # 4. 정렬(Tie-breaking) 및 탐험(Exploration) 로직
     # ---------------------------------------------------------
-    sorted_df = candidates_df.sort_values(by='total_score', ascending=False)
-    
     if is_ranked:
+        # [랭크 게임] 동점 시: 총점 > 숙련도 > 난이도 > 스타일 > 팀 조합 > 알파벳순
+        sorted_df = candidates_df.sort_values(
+            by=['total_score', 'score_prof', 'score_diff', 'score_style', 'score_team', 'champion_name'],
+            ascending=[False, False, False, False, False, True]
+        )
         final_recommendation = sorted_df.head(top_n)
     else:
-        top_4 = sorted_df.head(top_n - 1)
+        # [일반 게임] 동점 시: 총점 > 스타일 > 난이도 > 알파벳순
+        sorted_df = candidates_df.sort_values(
+            by=['total_score', 'score_style', 'score_diff', 'champion_name'],
+            ascending=[False, False, False, True]
+        )
+        
+        # 탐험 챔피언 풀 (안 해봤고, 난이도 5 이하)
         exploration_pool = sorted_df[
             (~sorted_df['is_played']) & 
-            (sorted_df['info_difficulty'] <= 5) & 
-            (~sorted_df['champ_match_key'].isin(top_4['champ_match_key']))
+            (sorted_df['info_difficulty'] <= 5)
         ]
         
-        if not exploration_pool.empty:
-            wildcard = exploration_pool.sample(1)
-            wildcard['recommend_reason'] = "💡 새로운 도전 (초보자 추천)"
-            final_recommendation = pd.concat([top_4, wildcard])
-        else:
-            final_recommendation = sorted_df.head(top_n)
+        # 탐험 챔피언 최대 2개 추출
+        num_wildcards = min(2, len(exploration_pool))
+        wildcards = exploration_pool.sample(num_wildcards).copy()
+        wildcards['recommend_reason'] = "💡 새로운 도전 (초보자 추천)"
+        
+        # [수정됨] 나머지 자리는 탐험 픽으로 뽑힌 챔피언을 제외하고, 남은 후보 중 점수 높은 순으로 무조건 채움
+        num_regulars = top_n - num_wildcards
+        remaining_pool = sorted_df[~sorted_df['champ_match_key'].isin(wildcards['champ_match_key'])]
+        regulars = remaining_pool.head(num_regulars).copy()
+        
+        # 합친 후, 지정된 '일반 게임 룰' 기준으로 최종 정렬
+        final_recommendation = pd.concat([regulars, wildcards]).sort_values(
+            by=['total_score', 'score_style', 'score_diff', 'champion_name'],
+            ascending=[False, False, False, True]
+        )
             
     result_cols = ['champion_name', 'total_score', 'recommend_reason']
     return final_recommendation[result_cols]
@@ -159,22 +184,19 @@ def recommend_autofill_v3(target_puuid, target_position, df_match, df_champ, use
 # ==========================================
 st.sidebar.header("시뮬레이션 설정")
 
-# 테스트용 PUUID 리스트 추출
 user_list = user_profile_df['puuid'].unique().tolist()
 selected_user = st.sidebar.selectbox("대상 유저 선택 (PUUID)", user_list)
 
 selected_pos = st.sidebar.selectbox("배정받은 포지션", ['TOP', 'JUNGLE', 'MIDDLE', 'BOTTOM', 'UTILITY'])
 
-# 밴 카드 (멀티 셀렉트)
 all_champs = sorted(df_champ['champion_name'].unique())
-bans = st.sidebar.multiselect("🚫 밴 챔피언", all_champs, default=[])
+# [수정됨] max_selections=10 을 통해 최대 밴 개수를 랭크 게임과 동일하게 제한
+bans = st.sidebar.multiselect("🚫 밴 챔피언 (최대 10개)", all_champs, default=[], max_selections=10)
 
-# 조합 니즈 설정
 needs = st.sidebar.radio("아군 조합 상황", 
                          options=['balanced', 'AP_needed', 'AD_needed'],
                          format_func=lambda x: '무난함 (밸런스)' if x == 'balanced' else ('AP 부족' if x == 'AP_needed' else 'AD 부족'))
 
-# 랭크 여부
 is_ranked = st.sidebar.toggle("랭크 게임인가요?", value=True)
 
 st.sidebar.markdown("---")
@@ -212,26 +234,19 @@ if st.session_state.get('run'):
     st.markdown("---")
     st.subheader(f"'{selected_pos}' 포지션 맞춤 추천 챔피언 Top 5")
     
-    with st.spinner('유저 성향과 메타 분석중'):
-        # 추천 로직 실행 (실제로는 위에서 복사한 함수를 호출합니다)
-        result_df = recommend_autofill_v2(selected_user, selected_pos, df_match, df_champ, user_profile_df, bans, needs, is_ranked)
+    with st.spinner('유저 성향과 메타 분석중...'):
+        result_df = recommend_autofill_v3(selected_user, selected_pos, df_match, df_champ, user_profile_df, bans, needs, is_ranked)
         
-        # [임시 출력 코드 - 실제 함수 연결 후 아래 주석 해제]
         if isinstance(result_df, str):
             st.error(result_df) # 에러 메시지 출력
         else:
-            # 카드 형태로 5개 나란히 보여주기 위해 컬럼 5개 생성
             cols = st.columns(5)
-            
-            # enumerate를 사용하여 0부터 순차적으로 번호(rank)를 매김
             for rank, (original_idx, row) in enumerate(result_df.iterrows()):
-                # rank는 0부터 시작하므로 +1을 해줘서 1위~5위로 만듦
                 current_rank = rank + 1 
                 
-                with cols[rank]: # 0~4번 컬럼에 순서대로 배치
-                    # 파란 박스(info) 안에 순위와 챔피언 이름 출력
+                with cols[rank]:
                     st.info(f"**{current_rank}위: {row['champion_name']}**")
                     st.metric(label="추천 점수", value=f"{int(row['total_score'])}점")
                     st.caption(f"{row['recommend_reason']}")
         
-        st.success("분석 완료!") # 임시 메시지
+        st.success("분석 완료!")
