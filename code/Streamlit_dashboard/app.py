@@ -9,16 +9,16 @@ import os
 st.set_page_config(page_title="LoL 오토필 생존 가이드", page_icon="🎮", layout="wide")
 
 # ==========================================
-# 1. 데이터 로드 및 캐싱
+# 1. V3 데이터 로드 및 캐싱 (절대 경로 적용)
 # ==========================================
 current_dir = os.path.dirname(os.path.abspath(__file__))
 
 @st.cache_data
 def load_data():
-    # 현재 폴더 경로와 파일명
-    match_path = os.path.join(current_dir, 'match_data_light.parquet')
-    champ_path = os.path.join(current_dir, 'champ_data.parquet')
-    user_path = os.path.join(current_dir, 'user_profile_light.parquet')
+    # 새로 저장한 V3 버전의 파일명으로 변경
+    match_path = os.path.join(current_dir, 'match_data_v3_light.parquet')
+    champ_path = os.path.join(current_dir, 'champ_data_v3.parquet')
+    user_path = os.path.join(current_dir, 'user_profile_v3_light.parquet')
     
     df_match = pd.read_parquet(match_path) 
     df_champ = pd.read_parquet(champ_path)
@@ -29,44 +29,57 @@ def load_data():
 try:
     df_match, df_champ, user_profile_df = load_data()
 except FileNotFoundError as e:
-    st.error(f"데이터 파일을 찾을 수 없습니다. 경로를 확인해주세요: {e}")
+    st.error(f"데이터 파일을 찾을 수 없습니다. 경로와 파일명을 확인해주세요: {e}")
     st.stop()
 
-# 추천 시스템 V2 함수
-def recommend_autofill_v2(target_puuid, target_position, df_match, df_champ, user_profile_df, 
-                          banned_champs, team_needs, is_ranked, top_n=5):
-   
+# =============================
+# 0306 수정 함수
+# =============================
+def recommend_autofill_v3(target_puuid, target_position, df_match, df_champ, user_profile_df, 
+                          banned_champs=[], team_needs='balanced', is_ranked=True, top_n=5):
+    """
+    고도화된 데이터(champ_match_key, 사거리 성향 등)가 반영된 최종 추천 시스템
+    """
+    
     # ---------------------------------------------------------
-    # 1. 타겟 유저 프로필 및 숙련도(경험) 추출
+    # 1. 타겟 유저 프로필 및 숙련도 추출
     # ---------------------------------------------------------
     user_data = user_profile_df[user_profile_df['puuid'] == target_puuid]
     if user_data.empty:
-        return "⚠️ 유저 프로필 데이터를 찾을 수 없습니다."
+        return "⚠️ 유저 프로필 데이터를 찾을 수 없습니다. (20게임 미만 유저)"
     
     user_data = user_data.iloc[0]
     primary_cluster = user_data['primary_cluster_id']
     secondary_cluster = user_data['secondary_cluster_id']
     user_ad_pref = user_data['avg_preferred_attack']
     user_ap_pref = user_data['avg_preferred_magic']
+    user_range_pref = user_data['avg_preferred_range'] # [추가됨] 사거리 선호도
     
-    # 해당 유저가 한 번이라도 플레이해 본 챔피언 목록 (숙련도)
-    played_champs = df_match[df_match['puuid'] == target_puuid]['champion_name'].unique().tolist()
+    # [수정됨] 이름 불일치 방지를 위해 무조건 champ_match_key 기준으로 숙련도 목록 추출
+    played_champs_keys = df_match[df_match['puuid'] == target_puuid]['champ_match_key'].unique().tolist()
     
     # ---------------------------------------------------------
     # 2. 메타 풀(Meta Pool) & 밴(Ban) 필터링
     # ---------------------------------------------------------
-    position_meta = df_match[df_match['team_position'] == target_position]['champion_name'].value_counts()
+    # [수정됨] 포지션 픽률도 champ_match_key 기준으로 집계
+    position_meta = df_match[df_match['team_position'] == target_position]['champ_match_key'].value_counts()
     
-    # 픽률 상위 30개 중 밴(Ban) 카드를 제외한 유효 후보군 생성
-    valid_candidates = [c for c in position_meta.head(30).index if c not in banned_champs]
-    candidates_df = df_champ[df_champ['champion_name'].isin(valid_candidates)].copy()
+    # UI에서 넘어온 밴 챔피언 이름(예: Wukong)을 데이터용 Key(예: monkeyking)로 변환
+    banned_keys = df_champ[df_champ['champion_name'].isin(banned_champs)]['champ_match_key'].tolist()
+    
+    # 유효 후보군 추출
+    valid_candidate_keys = [c for c in position_meta.head(30).index if c not in banned_keys]
+    candidates_df = df_champ[df_champ['champ_match_key'].isin(valid_candidate_keys)].copy()
     
     # ---------------------------------------------------------
-    # 3. 스코어링 엔진 (Scoring)
+    # 3. 고도화된 스코어링 엔진 (Scoring)
     # ---------------------------------------------------------
     candidates_df['total_score'] = 0.0
     candidates_df['recommend_reason'] = ""
-    candidates_df['is_played'] = candidates_df['champion_name'].isin(played_champs)
+    candidates_df['is_played'] = candidates_df['champ_match_key'].isin(played_champs_keys)
+    
+    # 보통 사거리 300 이하를 근거리(Melee), 초과를 원거리(Ranged)로 판별
+    is_user_ranged_pref = user_range_pref > 300 
     
     for idx, row in candidates_df.iterrows():
         score = 0
@@ -74,37 +87,43 @@ def recommend_autofill_v2(target_puuid, target_position, df_match, df_champ, use
         
         # A. 숙련도(Proficiency) 보정
         if row['is_played']:
-            score += 40
+            score += 30
             reason.append("⭐ 숙련도 있음")
         else:
             if is_ranked:
-                score -= 30 # 랭크게임인데 안 해본 챔피언이면 강력한 페널티
+                score -= 20
                 reason.append("⚠️ 연습 필요")
                 
         # B. 팀 조합(Team Needs) 보정
         if team_needs == 'AP_needed' and row['info_magic'] >= 6:
-            score += 25
+            score += 20
             reason.append("아군 AP 보완")
         elif team_needs == 'AD_needed' and row['info_attack'] >= 6:
-            score += 25
+            score += 20
             reason.append("아군 AD 보완")
         else:
-            # 팀 밸런스가 괜찮다면 유저 개인 성향(AD/AP) 반영
             ad_diff = abs(row['info_attack'] - user_ad_pref)
             ap_diff = abs(row['info_magic'] - user_ap_pref)
             score += max(0, 10 - (ad_diff + ap_diff))
             
-        # C. 클러스터(스타일) 보정
-        if row['cluster_id'] == primary_cluster:
-            score += 30
-            reason.append("플레이했던 챔프들이랑 비슷함")
-        elif row['cluster_id'] == secondary_cluster:
-            score += 20
-            reason.append("플레이했던 챔프들이랑 비슷함")
+        # C. [추가됨] 전투 사거리 성향 보정 (근거리/원거리 일치 여부)
+        is_champ_ranged = row['attackrange'] > 300
+        if is_user_ranged_pref == is_champ_ranged:
+            score += 10
+            range_type = "원거리" if is_champ_ranged else "근접 전투"
+            reason.append(f"선호하는 {range_type} 포지션")
             
-        # D. 난이도 보정 (국밥 필터)
+        # D. 클러스터(스타일) 보정
+        if row['cluster_id'] == primary_cluster:
+            score += 20
+            reason.append("1순위 플레이 스타일 일치")
+        elif row['cluster_id'] == secondary_cluster:
+            score += 15
+            reason.append("2순위 플레이 스타일 일치")
+            
+        # E. 난이도 보정 (국밥 필터)
         if row['info_difficulty'] <= 4:
-            score += 25
+            score += 20
             reason.append("쉬운 난이도")
             
         candidates_df.at[idx, 'total_score'] = score
@@ -113,25 +132,19 @@ def recommend_autofill_v2(target_puuid, target_position, df_match, df_champ, use
     # ---------------------------------------------------------
     # 4. 탐험(Exploration) 로직 및 최종 도출
     # ---------------------------------------------------------
-    # 점수순 정렬
     sorted_df = candidates_df.sort_values(by='total_score', ascending=False)
     
     if is_ranked:
-        # 랭크 게임은 무조건 점수(성능+숙련도) 높은 순으로 5개
         final_recommendation = sorted_df.head(top_n)
     else:
-        # 일반 게임(is_ranked=False): 상위 4개는 정배, 1개는 탐험 픽
         top_4 = sorted_df.head(top_n - 1)
-        
-        # 탐험 조건: 유저가 안 해봤고, 난이도가 낮으며, 상위 4개에 포함되지 않은 챔피언
         exploration_pool = sorted_df[
             (~sorted_df['is_played']) & 
             (sorted_df['info_difficulty'] <= 5) & 
-            (~sorted_df['champion_name'].isin(top_4['champion_name']))
+            (~sorted_df['champ_match_key'].isin(top_4['champ_match_key']))
         ]
         
         if not exploration_pool.empty:
-            # 탐험 풀에서 랜덤 1개 추출 (다양성 부여)
             wildcard = exploration_pool.sample(1)
             wildcard['recommend_reason'] = "💡 새로운 도전 (초보자 추천)"
             final_recommendation = pd.concat([top_4, wildcard])
