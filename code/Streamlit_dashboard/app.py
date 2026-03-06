@@ -163,7 +163,7 @@ def recommend_autofill_v3(target_puuid, target_position, df_match, df_champ, use
         # 탐험 챔피언 최대 2개 추출
         num_wildcards = min(2, len(exploration_pool))
         wildcards = exploration_pool.sample(num_wildcards).copy()
-        wildcards['recommend_reason'] = "💡 새로운 도전 (초보자 추천)"
+        wildcards['recommend_reason'] = "💡 새로운 도전 / " + wildcards['recommend_reason']
         
         # [수정됨] 나머지 자리는 탐험 픽으로 뽑힌 챔피언을 제외하고, 남은 후보 중 점수 높은 순으로 무조건 채움
         num_regulars = top_n - num_wildcards
