@@ -192,10 +192,11 @@ if st.sidebar.button("추천 챔피언 분석하기"):
 # ==========================================
 st.title("당신만을 위한 챔피언 추천 시스템")
 
-# [요청 5] 탭 기능 분리
-tab_recom, tab_cluster = st.tabs(["맞춤형 챔피언 추천", "챔피언 특징 기반 클러스터"])
+# tab_recom, tab_cluster = st.tabs(["맞춤형 챔피언 추천", "챔피언 특징 기반 클러스터"])
+# [0307 수정] 탭을 3개로 분리 (유저 프로필 분석 탭 추가)
+tab_recom, tab_user, tab_cluster = st.tabs(["맞춤형 챔피언 추천", "유저 프로필 분석", "챔피언 특징 기반 클러스터"])
 
-# ----------------- 추천 탭 -----------------
+# ----------------- 1. 추천 탭 -----------------
 with tab_recom:
     if st.session_state.get('run'):
         st.subheader(f"[{selected_nick}] 님을 위한 '{selected_pos_kor}' 포지션 Top 5")
@@ -217,7 +218,7 @@ with tab_recom:
                             champ_img_id = row['champ_match_key'].capitalize()
                             
                         img_url = f"https://ddragon.leagueoflegends.com/cdn/16.2.1/img/champion/{champ_img_id}.png"
-                        st.image(img_url, use_container_width=True)
+                        st.image(img_url, width='stretch')
                         
                         st.markdown(f"**{rank+1}위: {row['champion_name']}**")
                         st.write(f"**총점:** {int(row['total_score'])}점")
@@ -241,21 +242,123 @@ with tab_recom:
     else:
         st.info("👈 좌측 사이드바에서 시뮬레이션 설정을 맞춘 후 '추천 챔피언 분석하기' 버튼을 눌러주세요.")
 
-# ----------------- 군집화 데이터 탭 -----------------
+# ----------------- 2. [0307 추가] 유저 프로필 분석 탭 -----------------
+with tab_user:
+    st.subheader(f"🔎 [{selected_nick}] 님의 플레이 성향 분석")
+    
+    # 해당 유저의 프로필 데이터 추출
+    user_row = user_profile_df[user_profile_df['puuid'] == selected_puuid].iloc[0]
+    
+    # 1. 메인 포지션 / 서브 포지션 (한글화)
+    # POS_KOR_MAP에 없는 값(예: 'None')일 경우 그대로 출력하도록 get() 활용
+    main_pos_kor = POS_KOR_MAP.get(user_row['main_position'], user_row['main_position'])
+    sub_pos_kor = POS_KOR_MAP.get(user_row['sub_position'], user_row['sub_position'])
+    
+    col1, col2 = st.columns(2)
+    col1.metric("🥇 주 포지션", main_pos_kor)
+    col2.metric("🥈 부 포지션", sub_pos_kor)
+    st.markdown("---")
+    
+    # 유저의 매치 전적에서 챔피언별 플레이 횟수 집계
+    user_history = df_match[df_match['puuid'] == selected_puuid]
+    play_counts = user_history['champ_match_key'].value_counts().reset_index()
+    play_counts.columns = ['champ_match_key', 'play_count']
+    
+    if play_counts.empty:
+        st.warning("이 유저의 챔피언 플레이 기록이 부족합니다.")
+    else:
+        # 플레이 횟수 데이터와 챔피언 세부 정보(df_champ) 결합
+        merged_history = pd.merge(play_counts, df_champ, on='champ_match_key', how='inner')
+        
+        # 만약 cluster_name이 없다면 cluster_id로 임시 대체 (에러 방지용)
+        if 'cluster_name' not in merged_history.columns:
+            merged_history['cluster_name'] = "클러스터 " + merged_history['cluster_id'].astype(str)
+            
+        # 2. 클러스터별 플레이 비율 파이 차트
+        cluster_agg = merged_history.groupby('cluster_name')['play_count'].sum().reset_index()
+        
+        fig_pie = px.pie(
+            cluster_agg, 
+            names='cluster_name', 
+            values='play_count', 
+            title="선호하는 챔피언 스타일 (클러스터별 플레이 비율)",
+            hole=0.4, # 도넛 차트 형태로 디자인 (0이면 일반 파이차트)
+            color_discrete_sequence=px.colors.qualitative.Pastel
+        )
+        fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+        fig_pie.update_layout(title_font=dict(size=24), margin=dict(t=80))
+        st.plotly_chart(fig_pie, width='stretch')
+        
+        # 3. 특정 클러스터 클릭(선택) 시 상세 챔피언 리스트 표시
+        st.markdown("#### 📝 클러스터별 세부 플레이 챔피언 정보")
+        st.caption("파이 차트에 있는 클러스터를 아래에서 선택하면, 해당 스타일의 챔피언 플레이 기록과 세부 스탯을 볼 수 있습니다.")
+        
+        # 셀렉트박스로 파이 차트의 조각을 '클릭'하는 효과 구현
+        selected_cluster_for_details = st.selectbox(
+            "상세 정보를 확인할 클러스터를 선택하세요:", 
+            cluster_agg['cluster_name'].tolist()
+        )
+        
+        # 선택한 클러스터의 챔피언만 필터링
+        details_df = merged_history[merged_history['cluster_name'] == selected_cluster_for_details].copy()
+        
+        # 표시할 데이터 가공 (원거리/근거리 판별 등)
+        details_df['range_type'] = details_df['attackrange'].apply(lambda x: '원거리' if x > 300 else '근거리')
+        
+        # 화면에 띄울 컬럼만 추출 및 이름 한글화
+        display_df = details_df[[
+            'champion_name', 'play_count', 'range_type', 'info_difficulty', 
+            'info_attack', 'info_magic', 'info_defense'
+        ]].copy()
+        
+        display_df.columns = [
+            '챔피언', '플레이 횟수(숙련도)', '전투 사거리', '난이도 (1~10)', 
+            '물리 데미지', '마법 데미지', '탱킹력'
+        ]
+        
+        # 플레이 횟수 기준 내림차순 정렬
+        display_df = display_df.sort_values(by='플레이 횟수(숙련도)', ascending=False).reset_index(drop=True)
+        
+        # 데이터프레임 시각화 (인덱스 숨김)
+        st.dataframe(display_df, width='stretch', hide_index=True)
+        
+# ----------------- 3. 클러스터 데이터 탭 -----------------
 with tab_cluster:
-    st.subheader("챔피언 특징 클러스터링 매핑 (PCA)")
+    st.subheader("챔피언 성향 클러스터링 매핑 (PCA)")
     df_champ['cluster_id'] = df_champ['cluster_id'].astype(str)
     
-    fig = px.scatter(
+    color_col = 'cluster_name' if 'cluster_name' in df_champ.columns else 'cluster_id'
+    
+    fig_scatter = px.scatter(
         df_champ, 
         x='pca_x', 
         y='pca_y', 
-        color='cluster_name', 
+        color=color_col, 
         hover_name='champion_name',
-        hover_data=['info_attack', 'info_magic', 'info_difficulty', 'attackrange'],
-        title="챔피언별 스탯 기반 전투 스타일 맵",
+        # [0307 수정] 툴팁(Hover)에 표시할 데이터와 숨길 데이터 명시 (False = 숨김)
+        hover_data={
+            'pca_x': False,
+            'pca_y': False,
+            'info_attack': True,
+            'info_magic': True,
+            'info_difficulty': True,
+            'attackrange': True,
+            color_col: True  # 소속된 클러스터 이름도 표시
+        },
+        # [0307 수정] 영어 컬럼명을 한글로 매핑
+        labels={
+            'info_attack': '물리 데미지',
+            'info_magic': '마법 데미지',
+            'info_difficulty': '난이도',
+            'attackrange': '사거리',
+            'cluster_name': '플레이 성향',
+            'cluster_id': '클러스터 번호'
+        },
+        title="<b>챔피언별 스탯 기반 전투 스타일 맵</b>",
         color_discrete_sequence=px.colors.qualitative.Set1
     )
-    fig.update_layout(height=600)
-    st.plotly_chart(fig, use_container_width=True)
-    st.caption("※ 머신러닝이 챔피언의 기본 스탯과 성장치를 분석하여 유사한 전투 스타일끼리 묶어낸 지도입니다.")
+    
+    # 그래프 높이와 제목 크기 조정
+    fig_scatter.update_layout(height=600, title_font=dict(size=24), margin=dict(t=80))
+    st.plotly_chart(fig_scatter, width='stretch')
+    st.caption("※ 머신러닝이 챔피언의 기본 스탯과 성장스탯을 분석하여 유사한 전투 스타일끼리 묶어낸 지도입니다.")
