@@ -147,16 +147,32 @@ def recommend_autofill_v4(target_puuid, target_position, df_match, df_champ, use
         exploration_pool = sorted_df[(~sorted_df['is_played']) & (sorted_df['info_difficulty'] <= 5)]
         
         num_wildcards = min(2, len(exploration_pool))
-        wildcards = exploration_pool.head(num_wildcards).copy()
-        wildcards['recommend_reason'] = "💡 새로운 도전 / " + wildcards['recommend_reason']
+        # [0307 수정] '점수 상위 10개' 안에서 랜덤 추출
+        if num_wildcards > 0:
+            # 풀이 10개보다 적으면 전체 풀 크기로 제한
+            pool_size = min(10, len(exploration_pool)) 
+            top_exploration_pool = exploration_pool.head(pool_size)
+            
+            # 상위 10개 중에서 랜덤으로 num_wildcards(2개) 추출
+            wildcards = top_exploration_pool.sample(n=num_wildcards).copy()
+            wildcards['recommend_reason'] = "💡 새로운 도전 / " + wildcards['recommend_reason']
+        else:
+            # 탐험 풀이 아예 없을 경우를 대비한 빈 데이터프레임
+            wildcards = pd.DataFrame()
         
+        # 나머지 자리는 랭크게임 기준 추천 픽으로 채움
         num_regulars = top_n - num_wildcards
-        remaining_pool = sorted_df[~sorted_df['champ_match_key'].isin(wildcards['champ_match_key'])]
+        if not wildcards.empty:
+            remaining_pool = sorted_df[~sorted_df['champ_match_key'].isin(wildcards['champ_match_key'])]
+        else:
+            remaining_pool = sorted_df
+            
         regulars = remaining_pool.head(num_regulars).copy()
         
+        # 합친 후 최종 정렬
         final_recommendation = pd.concat([regulars, wildcards]).sort_values(by=['total_score', 'score_style', 'score_diff', 'champion_name'], ascending=[False, False, False, True])
             
-    # [요청 5] 특성 표시를 위해 전체 컬럼을 다 반환하도록 수정 (기존: result_cols 필터링 삭제)
+    # 특성 표시를 위해 전체 컬럼을 다 반환하도록 수정
     return final_recommendation
 
 # ==========================================
