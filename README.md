@@ -1,6 +1,7 @@
 # Project_LastDance 
-- League of Legends Win Structure Analysis
-데이터 기반으로 **승리 기여 구조 해석 및 유저 경험 개선 전략을 제안하는** 프로젝트입니다.
+### League of Legends Win Structure Analysis
+
+League of Legends 데이터 기반으로 **승리 기여 구조 해석 및 유저 경험 개선 전략을 제안하는** 프로젝트입니다.
 
 
 
@@ -56,15 +57,6 @@ https://public.tableau.com/app/profile/.32296278/viz/LoL_17732259346840/sheet0
 ## 프로젝트 아키텍처
 
 ```
-[Community Data (Reddit / YouTube)]
-        │
-        ▼
-Comment Processing
-Translation (Google Translation API)
-        │
-        ▼
-Community Perception Analysis
-
 
 [Game Data (Riot API)]
 
@@ -86,6 +78,20 @@ Exploratory Data Analysis
         │
         ▼
 Machine Learning Models
+===================================================================================================================================
+
+[Community Data (Reddit / YouTube)]
+
+Reddit (Web Crawling)
+YouTube (Youtube API)
+        │
+        ▼
+Comment Processing
+Translation (Google Translation API)
+        │
+        ▼
+Community Perception Analysis
+===================================================================================================================================
 
 [Machine Learning (XGBoost,LightGBM)]
 
