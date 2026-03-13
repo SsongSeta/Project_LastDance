@@ -5,6 +5,7 @@
 
 
 
+
 Python / Riot API / XGBoost / LightGBM / SHAP / Tableau
 
 ---
@@ -20,6 +21,8 @@ Python / Riot API / XGBoost / LightGBM / SHAP / Tableau
 커뮤니티 인식과 실제 경기 데이터를 비교 분석하여 승리 구조와 포지션별 기여를 Tableau로 시각화하고
 
 추천 시스템을 Streamlit으로 시각화하였습니다.
+
+https://public.tableau.com/app/profile/.32296278/viz/LoL_17732259346840/sheet0
 
 <p align="center">
   <img src="images/커뮤니티인식분석.png" width="30%">
