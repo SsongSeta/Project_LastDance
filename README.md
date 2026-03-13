@@ -206,7 +206,7 @@ Full Game Model
 ## 🛠 기술 스택
 
 ### Language
-Python
+- Python
 
 ### Libraries
 - pandas
