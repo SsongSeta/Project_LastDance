@@ -132,6 +132,79 @@ Riot API 기반 **15개 서버 랭크 유저 및 매치 데이터**
 
 ---
 
+## ⚙️ Feature Engineering
+
+EDA 결과를 기반으로 **경기 승패를 설명하는 주요 Feature를 설계했습니다.**
+
+### Player Performance Features
+
+플레이어 성과 지표
+
+- Gold Earned
+- Damage Dealt
+- Damage per Minute
+- Gold per Minute
+- Deaths
+- Vision Score
+
+---
+
+### Team Level Features
+
+팀 단위 경기 지표
+
+- Total Team Gold
+- Team Damage
+- Team Kills
+- Objective Control
+- Tower Damage
+
+---
+
+### Timeline Features
+
+경기 흐름을 반영하기 위한 지표
+
+- Early Game Gold Difference
+- Early Game Kill Difference
+- Objective Timing
+- Early Death Count
+
+---
+
+### Position Based Features
+
+포지션 역할 차이를 반영한 지표
+
+- Jungle Objective Participation
+- Support Vision Contribution
+- Carry Damage Share
+
+---
+
+### Match Context Features
+
+경기 맥락을 설명하는 지표
+
+- Game Duration
+- Gold Difference
+- Kill Difference
+- Objective Difference
+
+---
+
+### Feature Selection
+
+모델 학습 전 다음 과정을 통해 Feature를 정제했습니다.
+
+- Correlation Analysis
+- Feature Importance
+- SHAP 기반 Feature 영향 분석
+
+이를 통해 **모델 해석이 가능한 Feature 집합을 구축했습니다.**
+
+---
+
 ## 🔍 Exploratory Data Analysis
 
 EDA는 단순 데이터 요약이 아닌  
