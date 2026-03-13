@@ -1,6 +1,6 @@
 # Project_LastDance 
 - League of Legends Win Structure Analysis
-데이터 기반으로 **커뮤니티 인식과 실제 경기 승리 구조를 비교 분석**한 프로젝트입니다.
+데이터 기반으로 **승리 기여 구조 해석 및 유저 경험 개선 전략을 제안하는** 프로젝트입니다.
 
 
 
