@@ -343,7 +343,8 @@ project
  │
  ├ .gitignore
  ├ LICENSE
- └ README.md
+ ├ README.md
+ └ README_EN.md
 ```
 
 ---
