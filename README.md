@@ -8,8 +8,8 @@ League of Legends 데이터를 기반으로
 
 ## 🌐 Language
 
-🇰🇷 **Korean** → README.md  
-🇺🇸 **English** → README_EN.md  
+🇰🇷 [Korean](README.md)  
+🇺🇸 [English](README_EN.md)
 
 ---
 
