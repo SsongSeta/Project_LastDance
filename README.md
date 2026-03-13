@@ -56,6 +56,34 @@ https://public.tableau.com/app/profile/.32296278/viz/LoL_17732259346840/sheet0
 
 ---
 
+## 🏗 Project Architecture
+
+```mermaid
+flowchart LR
+
+subgraph Game_Data_Pipeline
+A[Riot API] --> B[Match Data Collection]
+B --> C[Feature Engineering]
+C --> D[Machine Learning]
+D --> E[SHAP Interpretation]
+end
+
+subgraph Community_Data_Pipeline
+F[Reddit Crawling] --> G[Comment Processing]
+H[YouTube API] --> G
+G --> I[Translation]
+I --> J[Community Perception Analysis]
+end
+
+E --> K[Win Structure Classification]
+J --> K
+
+K --> L[Tableau Dashboard]
+K --> M[Streamlit Recommendation]
+```
+
+---
+
 ## 📦 데이터 소스 및 역할
 
 | Source | Data Type | Role |
