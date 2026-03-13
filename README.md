@@ -273,7 +273,7 @@ project
  │   ├ 01_Riot_API
  │   ├ 02_Comment
  │   ├ 03_Analysis_pipeline
- │   └ 04_Streamlit_dashboard
+ │   ├ 04_Streamlit_dashboard
  │   └ ETC
  │
  ├ images
