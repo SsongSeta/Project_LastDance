@@ -9,8 +9,8 @@ A data analysis project that analyzes League of Legends match data to
 
 ## 🌐 Language
 
-🇰🇷 **Korean** → README.md
-🇺🇸 **English** → README_EN.md
+- 🇰🇷 [Korean](README.md)
+- 🇺🇸 [English](README_EN.md)
 
 ---
 
